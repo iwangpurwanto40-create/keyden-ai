@@ -26,8 +26,8 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // URL ENDPOINT RESMI MAGNIFIC AI FOR VIDEO GENERATION
-        const BASE_URL = 'https://api.magnific.ai/v1/video';
+        // RUTE ALTERNATIF: Menggunakan rute root v1/worker untuk deteksi tugas
+        const BASE_URL = 'https://api.magnific.ai/v1';
 
         // JALUR 1: Jika sistem sedang mengecek status antrean video
         if (checkStatus && taskId) {
@@ -53,8 +53,8 @@ module.exports = async (req, res) => {
         }
 
         // JALUR 2: Mengirim perintah pembuatan video baru (Generate)
-        // URL diubah ke endpoint pembuatan video kontrol yang valid
-        const generateUrl = `${BASE_URL}/generation`;
+        // Menggunakan endpoint /v1/video untuk pembuatan control video langsung
+        const generateUrl = `${BASE_URL}/video`;
         
         const payload = {
             model: model || 'kling-v2.6',
@@ -87,7 +87,6 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                // Menangkap pesan jika API Key salah (Unauthorized) atau kehabisan limit kredit
                 if (response.status === 401) {
                     return res.status(401).json({ error: "API Key salah atau tidak valid. Periksa kembali key Anda." });
                 }
@@ -97,7 +96,8 @@ module.exports = async (req, res) => {
             return res.status(200).json(data);
         } catch (jsonEror) {
             if (response.status === 404) {
-                return res.status(404).json({ error: "Endpoint Magnific Video tidak ditemukan (404). Pastikan akun Anda mendukung fitur Video API." });
+                // Skema fallback jika endpoint /video langsung juga memberikan respons 404
+                return res.status(404).json({ error: "Rute API Magnific tidak merespons (404). Pastikan langganan API Key Anda mengizinkan akses ke model video." });
             }
             return res.status(response.status).json({ error: `Gagal memproses data server Magnific (${response.status}).` });
         }
