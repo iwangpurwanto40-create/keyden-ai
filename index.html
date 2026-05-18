@@ -94,23 +94,21 @@
         let uploadedImageUrl = "";
         let uploadedVideoUrl = "";
 
-        // Fungsi bantu upload file media ke server pihak ketiga (tmpfiles.org) agar dpt URL publik secara gratis
+        // Fungsi upload file media ke internet agar mendapat URL publik langsung
         async function uploadFileToInternet(file) {
             const formData = new FormData();
             formData.append("file", file);
             const res = await fetch("https://tmpfiles.org/api/v1/upload", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Gagal mengunggah file referensi ke server penyimpanan.");
+            if (!res.ok) throw new Error("Gagal mengunggah file media ke server penyimpanan sementara.");
             const data = await res.json();
-            // Mengubah URL view menjadi URL direct file mentah
             return data.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
         }
 
-        // Listener input file gambar
         const imageInput = document.getElementById('imageInput');
         const imageStatus = document.getElementById('imageStatus');
         imageInput.addEventListener('change', async () => {
             if(imageInput.files.length > 0) {
-                imageStatus.innerText = "Mengunggah gambar...";
+                imageStatus.innerText = "Mengunggah gambar ke cloud...";
                 try {
                     uploadedImageUrl = await uploadFileToInternet(imageInput.files[0]);
                     imageStatus.innerText = "Gambar siap: " + imageInput.files[0].name;
@@ -122,12 +120,11 @@
             }
         });
 
-        // Listener input file video
         const videoInput = document.getElementById('videoInput');
         const videoStatus = document.getElementById('videoStatus');
         videoInput.addEventListener('change', async () => {
             if(videoInput.files.length > 0) {
-                videoStatus.innerText = "Mengunggah video...";
+                videoStatus.innerText = "Mengunggah video ke cloud...";
                 try {
                     uploadedVideoUrl = await uploadFileToInternet(videoInput.files[0]);
                     videoStatus.innerText = "Video siap: " + videoInput.files[0].name;
@@ -139,14 +136,12 @@
             }
         });
 
-        // Slider CFG Scale
         const cfgScale = document.getElementById('cfgScale');
         const cfgValue = document.getElementById('cfgValue');
         cfgScale.addEventListener('input', () => {
             cfgValue.innerText = parseFloat(cfgScale.value).toFixed(2);
         });
 
-        // Aksi Tombol Utama
         document.getElementById('generateBtn').addEventListener('click', async () => {
             const apiKey = document.getElementById('apiKey').value.trim();
             const prompt = document.getElementById('promptInput').value;
@@ -155,50 +150,44 @@
             const orientation = document.getElementById('orientationSelect').value;
 
             if (!apiKey) {
-                alert("Mohon masukkan API Key Freepik/Magnific Anda terlebih dahulu!");
+                alert("Mohon masukkan API Key Freepik/Magnific Anda!");
                 return;
             }
             if (!uploadedImageUrl) {
-                alert("Mohon pilih dan tunggu upload Gambar Referensi selesai!");
+                alert("Mohon pilih dan tunggu Gambar Referensi terunggah sempurna!");
                 return;
             }
 
             const btn = document.getElementById('generateBtn');
-            btn.innerText = "MENGIRIM PERMINTAAN...";
+            btn.innerText = "MENGIRIM PERMINTAAN KEMBALI VIA SERVER...";
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
 
-            // Menggunakan CORS proxy publik gratisan untuk menghindari eror "Failed to fetch"
-            const proxyUrl = "https://corsproxy.io/?";
-            const targetApiUrl = "https://api.freepik.com/v1/ai/video-generation";
-
             try {
-                const response = await fetch(proxyUrl + encodeURIComponent(targetApiUrl), {
+                // Menembak ke endpoint internal Vercel kita sendiri untuk mem-bypass CORS secara bersih
+                const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        apiKey: apiKey,
                         model: model,
-                        prompt: prompt || "Smooth motion control tracking shot",
+                        prompt: prompt,
                         image_url: uploadedImageUrl,
-                        video_url: uploadedVideoUrl || undefined, // Opsional jika dimasukkan
-                        guidance_scale: parseFloat(cfg),
+                        video_url: uploadedVideoUrl || undefined,
+                        guidance_scale: cfg,
                         character_orientation: orientation
                     })
                 });
 
+                const data = await response.json();
+
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error("Respon API Gagal. Pastikan kuota API Key aktif.");
+                    throw new Error(data.error || "Gagal memproses video di server.");
                 }
 
-                const data = await response.json();
                 const taskId = data.task_id;
-
                 btn.innerText = "PROSES GENERATE VIDEO...";
-                checkStatus(taskId, apiKey, proxyUrl);
+                checkStatus(taskId, apiKey);
 
             } catch (error) {
                 alert("Error: " + error.message);
@@ -206,15 +195,11 @@
             }
         });
 
-        async function checkStatus(taskId, apiKey, proxyUrl) {
+        async function checkStatus(taskId, apiKey) {
             const btn = document.getElementById('generateBtn');
-            const checkUrl = `https://api.freepik.com/v1/ai/tasks/${taskId}`;
-            
             const interval = setInterval(async () => {
                 try {
-                    const res = await fetch(proxyUrl + encodeURIComponent(checkUrl), {
-                        headers: { 'Authorization': `Bearer ${apiKey}` }
-                    });
+                    const res = await fetch(`/api/status?taskId=${taskId}&apiKey=${apiKey}`);
                     const taskData = await res.json();
 
                     if (taskData.status === 'COMPLETED') {
@@ -225,7 +210,7 @@
                         resetButton();
                     } else if (taskData.status === 'FAILED') {
                         clearInterval(interval);
-                        alert("Pembuatan video gagal di sisi server AI.");
+                        alert("Pembuatan video gagal di sisi antrean server AI.");
                         resetButton();
                     } else {
                         btn.innerText = `SEDANG MEMPROSES... (${taskData.progress || 'Antre'}%)`;
