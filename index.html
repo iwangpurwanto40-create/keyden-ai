@@ -41,7 +41,6 @@
                 <span class="text-amber-400 text-2xl block mb-1">🎬</span>
                 <p id="videoStatus" class="text-xs text-zinc-500">Klik atau drag video di sini</p>
             </div>
-            <p class="text-[10px] text-amber-400/70 mt-2">Gunakan video referensi berdurasi pendek agar proses cepat</p>
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
@@ -71,10 +70,6 @@
                 <span id="cfgValue" class="text-amber-400">0.50</span>
             </div>
             <input type="range" id="cfgScale" min="0" max="1" step="0.05" value="0.50" class="w-full accent-amber-400 bg-zinc-950 h-2 rounded-lg appearance-none cursor-pointer">
-            <div class="flex justify-between text-[10px] text-zinc-500 mt-1">
-                <span>0 = bebas</span>
-                <span>1 = ketat</span>
-            </div>
         </div>
     </div>
 
@@ -84,10 +79,10 @@
         </button>
 
         <div id="resultContainer" class="mt-6 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hidden">
-            <h3 class="text-xs font-bold text-zinc-400 mb-3 uppercase tracking-wider">Hasil Video Anda:</h3>
-            <div id="loadingStatus" class="text-sm text-amber-400 mb-2 hidden">Sedang memproses antrean AI...</div>
-            <video id="outputVideo" controls class="w-full rounded-xl border border-zinc-950 bg-black hidden"></video>
-            <a id="downloadBtn" href="#" download="motion-control-video.mp4" class="text-center mt-3 text-xs bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700 hidden">Unduh Video</a>
+            <h3 class="text-xs font-bold text-zinc-400 mb-3 uppercase tracking-wider">Status Pemrosesan:</h3>
+            <div id="loadingStatus" class="text-sm text-amber-400 mb-2 font-semibold animate-pulse">Menghubungkan ke server AI...</div>
+            <video id="outputVideo" controls class="w-full rounded-xl border border-zinc-950 bg-black mt-3 hidden"></video>
+            <a id="downloadBtn" href="#" target="_blank" class="text-center mt-3 text-xs bg-amber-400 text-black font-bold p-3 rounded-xl hover:bg-amber-300 block hidden">Unduh Video</a>
         </div>
     </div>
 
@@ -95,12 +90,11 @@
         let uploadedImageUrl = "";
         let uploadedVideoUrl = "";
 
-        // Menggunakan provider upload gratis yang menghasilkan direct URL mentah tanpa redirect page
         async function uploadFileToInternet(file) {
             const formData = new FormData();
             formData.append("file", file);
             const res = await fetch("https://tmpfiles.org/api/v1/upload", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Gagal mengunggah file ke server storage.");
+            if (!res.ok) throw new Error("Gagal mengunggah file.");
             const data = await res.json();
             return data.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
         }
@@ -139,9 +133,7 @@
 
         const cfgScale = document.getElementById('cfgScale');
         const cfgValue = document.getElementById('cfgValue');
-        cfgScale.addEventListener('input', () => {
-            cfgValue.innerText = parseFloat(cfgScale.value).toFixed(2);
-        });
+        cfgScale.addEventListener('input', () => { cfgValue.innerText = parseFloat(cfgScale.value).toFixed(2); });
 
         document.getElementById('generateBtn').addEventListener('click', async () => {
             const apiKey = document.getElementById('apiKey').value.trim();
@@ -150,58 +142,57 @@
             const cfg = document.getElementById('cfgScale').value;
             const orientation = document.getElementById('orientationSelect').value;
 
-            if (!apiKey) { return alert("Mohon masukkan API Key Magnific Anda!"); }
-            if (!uploadedImageUrl) { return alert("Mohon pilih dan tunggu Gambar Referensi selesai diunggah!"); }
+            if (!apiKey) return alert("Mohon masukkan API Key!");
+            if (!uploadedImageUrl) return alert("Mohon tunggu Gambar Referensi selesai diunggah!");
 
             const btn = document.getElementById('generateBtn');
             btn.innerText = "MENGIRIM PERMINTAAN...";
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
 
-            // Solusi Bypass CORS memakai proxy handal berbasis AllOrigins/CorsProxy.io secara bergantian
-            const proxyBase = "https://corsproxy.io/?";
-            const targetUrl = "https://api.magnific.com/v1/motion-control";
+            document.getElementById('resultContainer').classList.remove('hidden');
+            const loadStatus = document.getElementById('loadingStatus');
+            loadStatus.classList.remove('hidden');
+            loadStatus.innerText = "Mengirim data antrean ke backend Vercel...";
 
             try {
-                const response = await fetch(proxyBase + encodeURIComponent(targetUrl), {
+                // Memanggil backend internal Vercel secara aman dan bebas CORS
+                const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: {
-                        'X-Magnific-API-Key': apiKey,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: model,
-                        prompt: prompt || "Smooth motion control tracking shot",
+                        apiKey, model, prompt,
                         image_url: uploadedImageUrl,
                         video_url: uploadedVideoUrl || undefined,
-                        cfg_scale: parseFloat(cfg),
+                        guidance_scale: cfg,
                         character_orientation: orientation
                     })
                 });
 
                 const data = await response.json();
-                if (!response.ok) { throw new Error(data.message || "API menolak permintaan. Cek sisa kuota Key Anda."); }
+                if (!response.ok) throw new Error(data.error || "Gagal memproses ke server AI.");
 
-                const taskId = data.task_id || data.id;
-                document.getElementById('resultContainer').classList.remove('hidden');
-                document.getElementById('loadingStatus').classList.remove('hidden');
-                
-                checkVideoStatus(taskId, apiKey, proxyBase);
+                loadStatus.innerText = "Permintaan diterima! Sedang mengantre di server Magnific...";
+                checkVideoStatus(data.task_id || data.id, apiKey);
 
             } catch (error) {
-                alert("Error saat generate: " + error.message);
+                alert("Eror: " + error.message);
                 resetButton();
+                loadStatus.classList.add('hidden');
             }
         });
 
-        async function checkVideoStatus(taskId, apiKey, proxyBase) {
+        async function checkVideoStatus(taskId, apiKey) {
             const btn = document.getElementById('generateBtn');
-            const statusUrl = `https://api.magnific.com/v1/motion-control/task/${taskId}`;
+            const loadStatus = document.getElementById('loadingStatus');
             
             const timer = setInterval(async () => {
                 try {
-                    const res = await fetch(proxyBase + encodeURIComponent(statusUrl), {
-                        headers: { 'X-Magnific-API-Key': apiKey }
+                    // Pengecekan status melalui backend internal agar stabil
+                    const res = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey, taskId, checkStatus: true })
                     });
                     const resData = await res.json();
 
@@ -209,7 +200,7 @@
                         clearInterval(timer);
                         const finalVideoUrl = resData.output_video_url || resData.result;
                         
-                        document.getElementById('loadingStatus').classList.add('hidden');
+                        loadStatus.innerText = "Selesai! Video berhasil dibuat.";
                         
                         const vWidget = document.getElementById('outputVideo');
                         vWidget.src = finalVideoUrl;
@@ -222,13 +213,16 @@
                         resetButton();
                     } else if (resData.status === 'failed' || resData.status === 'FAILED') {
                         clearInterval(timer);
-                        alert("Pembuatan video gagal di antrean server Magnific.");
+                        alert("Pembuatan video gagal di server AI.");
                         resetButton();
+                        loadStatus.innerText = "Proses gagal.";
                     } else {
-                        btn.innerText = `PROSES GENERATE... (${resData.progress || 'Antre'}%)`;
+                        const progress = resData.progress !== undefined ? resData.progress : 'Antre';
+                        btn.innerText = `PROSES GENERATE... (${progress}%)`;
+                        loadStatus.innerText = `Sedang diproses oleh AI Magnific... Progress: ${progress}%`;
                     }
                 } catch(e) {
-                    console.log("Menunggu antrean...");
+                    console.log("Menghubungkan...");
                 }
             }, 6000);
         }
