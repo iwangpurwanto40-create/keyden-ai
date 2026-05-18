@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar tidak diblokir browser HP
+    // Pengaturan CORS untuk akses browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -23,12 +23,15 @@ module.exports = async (req, res) => {
         const { apiKey, taskId, checkStatus, model, prompt, image_url, video_url, guidance_scale, character_orientation } = req.body;
 
         if (!apiKey) {
-            return res.status(400).json({ error: 'API Key Magnific wajib diisi!' });
+            return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // JALUR 1: Pengecekan Status Antrean Video
+        // URL ENDPOINT RESMI MAGNIFIC AI FOR VIDEO GENERATION
+        const BASE_URL = 'https://api.magnific.ai/v1/video';
+
+        // JALUR 1: Jika sistem sedang mengecek status antrean video
         if (checkStatus && taskId) {
-            const statusUrl = `https://api.magnific.ai/v1/video/control/${taskId}`;
+            const statusUrl = `${BASE_URL}/tasks/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -41,32 +44,30 @@ module.exports = async (req, res) => {
             try {
                 const jsonData = JSON.parse(textData);
                 if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengecek status antrean.' });
+                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengambil status antrean.' });
                 }
                 return res.status(200).json(jsonData);
             } catch (e) {
-                return res.status(response.status).json({ error: `Server Magnific sibuk/down (${response.status}). Coba beberapa saat lagi.` });
+                return res.status(response.status).json({ error: `Server Magnific merespons dengan status ${response.status}.` });
             }
         }
 
-        // JALUR 2: Pembuatan Video Baru (Generate)
-        const generateUrl = 'https://api.magnific.ai/v1/video/control';
+        // JALUR 2: Mengirim perintah pembuatan video baru (Generate)
+        // URL diubah ke endpoint pembuatan video kontrol yang valid
+        const generateUrl = `${BASE_URL}/generation`;
         
-        // Memastikan parameter berbentuk tipe data yang sangat disukai API Magnific
         const payload = {
             model: model || 'kling-v2.6',
             image_url: String(image_url),
             guidance_scale: parseFloat(guidance_scale) || 0.5
         };
 
-        // Hanya masukkan video_url jika user mengunggah video referensi
+        // Memasukkan input video jika ada referensi video yang berhasil diunggah
         if (video_url && video_url.trim() !== "") {
             payload.video_url = String(video_url);
-            // Beberapa endpoint Magnific mewajibkan character_orientation dikirim jika ada video_url
             payload.character_orientation = character_orientation || 'video';
         }
         
-        // Hanya masukkan prompt jika diisi teks oleh user
         if (prompt && prompt.trim() !== "") {
             payload.prompt = String(prompt);
         }
@@ -86,16 +87,19 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
+                // Menangkap pesan jika API Key salah (Unauthorized) atau kehabisan limit kredit
+                if (response.status === 401) {
+                    return res.status(401).json({ error: "API Key salah atau tidak valid. Periksa kembali key Anda." });
+                }
                 const errMsg = data.detail || (data.error ? data.error.message : 'Ditolak oleh server Magnific.');
                 return res.status(response.status).json({ error: errMsg });
             }
             return res.status(200).json(data);
         } catch (jsonEror) {
-            // Mengatasi jika Magnific membalas dalam bentuk teks html eror cloudflare/server crash
-            if (responseText.includes("limit") || responseText.includes("trial")) {
-                return res.status(403).json({ error: "Sisa kuota API Key Magnific Anda habis / harus upgrade akun premium." });
+            if (response.status === 404) {
+                return res.status(404).json({ error: "Endpoint Magnific Video tidak ditemukan (404). Pastikan akun Anda mendukung fitur Video API." });
             }
-            return res.status(response.status).json({ error: `Eror Struktur API Magnific (${response.status}). Pastikan API Key Anda aktif dan memiliki kredit.` });
+            return res.status(response.status).json({ error: `Gagal memproses data server Magnific (${response.status}).` });
         }
 
     } catch (error) {
