@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Keyden AI - Motion Control</title>
+    <title>Saken Geal-Geol - Motion Control</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         body { background-color: #0d0d0d; color: #e5e7eb; font-family: sans-serif; }
@@ -13,15 +13,15 @@
 
     <div>
         <div class="text-center my-6">
-            <h1 class="text-3xl font-black text-amber-400 tracking-wider">KEYDEN AI</h1>
-            <p class="text-xs text-zinc-400 mt-1">motion control generator by Keyden</p>
+            <h1 class="text-3xl font-black text-amber-400 tracking-wider">SAKEN GEAL-GEOL</h1>
+            <p class="text-xs text-zinc-400 mt-1">motion control generator by SAKURA</p>
             <div class="inline-block bg-zinc-900 border border-zinc-800 text-amber-400 text-xs px-3 py-1 rounded-full mt-3 font-semibold">
                 ● Ready to Generate
             </div>
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
-            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">API KEY (Freepik / Magnific)</label>
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">API KEY (Magnific / Freepik)</label>
             <input type="password" id="apiKey" placeholder="sk-mag-..." class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 focus:outline-none focus:border-amber-400 text-amber-400">
         </div>
 
@@ -41,13 +41,13 @@
                 <span class="text-amber-400 text-2xl block mb-1">🎬</span>
                 <p id="videoStatus" class="text-xs text-zinc-500">Klik atau drag video di sini</p>
             </div>
-            <p class="text-[10px] text-amber-400/70 mt-2">Gunakan video referensi dari TikTok agar ukurannya kecil</p>
+            <p class="text-[10px] text-amber-400/70 mt-2">Gunakan video referensi berdurasi pendek agar proses cepat</p>
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
             <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Model</label>
             <select id="modelSelect" class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 text-white focus:outline-none focus:border-amber-400">
-                <option value="kling-2.6">Kling 2.6 Standard</option>
+                <option value="kling-v2.6">Kling 2.6 Standard</option>
                 <option value="luma-dream-machine">Luma Dream Machine</option>
             </select>
         </div>
@@ -85,8 +85,9 @@
 
         <div id="resultContainer" class="mt-6 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hidden">
             <h3 class="text-xs font-bold text-zinc-400 mb-3 uppercase tracking-wider">Hasil Video Anda:</h3>
-            <video id="outputVideo" controls class="w-full rounded-xl border border-zinc-950 bg-black"></video>
-            <a id="downloadBtn" href="#" download="keyden-ai-video.mp4" class="block text-center mt-3 text-xs bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700">Unduh Video</a>
+            <div id="loadingStatus" class="text-sm text-amber-400 mb-2 hidden">Sedang memproses antrean AI...</div>
+            <video id="outputVideo" controls class="w-full rounded-xl border border-zinc-950 bg-black hidden"></video>
+            <a id="downloadBtn" href="#" download="motion-control-video.mp4" class="text-center mt-3 text-xs bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700 hidden">Unduh Video</a>
         </div>
     </div>
 
@@ -94,12 +95,12 @@
         let uploadedImageUrl = "";
         let uploadedVideoUrl = "";
 
-        // Fungsi upload file media ke internet agar mendapat URL publik langsung
+        // Menggunakan provider upload gratis yang menghasilkan direct URL mentah tanpa redirect page
         async function uploadFileToInternet(file) {
             const formData = new FormData();
             formData.append("file", file);
             const res = await fetch("https://tmpfiles.org/api/v1/upload", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Gagal mengunggah file media ke server penyimpanan sementara.");
+            if (!res.ok) throw new Error("Gagal mengunggah file ke server storage.");
             const data = await res.json();
             return data.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
         }
@@ -108,14 +109,14 @@
         const imageStatus = document.getElementById('imageStatus');
         imageInput.addEventListener('change', async () => {
             if(imageInput.files.length > 0) {
-                imageStatus.innerText = "Mengunggah gambar ke cloud...";
+                imageStatus.innerText = "Mengunggah gambar...";
                 try {
                     uploadedImageUrl = await uploadFileToInternet(imageInput.files[0]);
-                    imageStatus.innerText = "Gambar siap: " + imageInput.files[0].name;
+                    imageStatus.innerText = "Gambar Berhasil Diunggah ✔";
                     imageStatus.className = "text-xs text-amber-400 font-semibold";
                 } catch(e) {
-                    alert(e.message);
-                    imageStatus.innerText = "Gagal mengunggah gambar.";
+                    alert("Gagal unggah gambar: " + e.message);
+                    imageStatus.innerText = "Klik untuk coba lagi";
                 }
             }
         });
@@ -124,14 +125,14 @@
         const videoStatus = document.getElementById('videoStatus');
         videoInput.addEventListener('change', async () => {
             if(videoInput.files.length > 0) {
-                videoStatus.innerText = "Mengunggah video ke cloud...";
+                videoStatus.innerText = "Mengunggah video...";
                 try {
                     uploadedVideoUrl = await uploadFileToInternet(videoInput.files[0]);
-                    videoStatus.innerText = "Video siap: " + videoInput.files[0].name;
+                    videoStatus.innerText = "Video Berhasil Diunggah ✔";
                     videoStatus.className = "text-xs text-amber-400 font-semibold";
                 } catch(e) {
-                    alert(e.message);
-                    videoStatus.innerText = "Gagal mengunggah video.";
+                    alert("Gagal unggah video: " + e.message);
+                    videoStatus.innerText = "Klik untuk coba lagi";
                 }
             }
         });
@@ -149,76 +150,87 @@
             const cfg = document.getElementById('cfgScale').value;
             const orientation = document.getElementById('orientationSelect').value;
 
-            if (!apiKey) {
-                alert("Mohon masukkan API Key Freepik/Magnific Anda!");
-                return;
-            }
-            if (!uploadedImageUrl) {
-                alert("Mohon pilih dan tunggu Gambar Referensi terunggah sempurna!");
-                return;
-            }
+            if (!apiKey) { return alert("Mohon masukkan API Key Magnific Anda!"); }
+            if (!uploadedImageUrl) { return alert("Mohon pilih dan tunggu Gambar Referensi selesai diunggah!"); }
 
             const btn = document.getElementById('generateBtn');
-            btn.innerText = "MENGIRIM PERMINTAAN KEMBALI VIA SERVER...";
+            btn.innerText = "MENGIRIM PERMINTAAN...";
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
 
+            // Solusi Bypass CORS memakai proxy handal berbasis AllOrigins/CorsProxy.io secara bergantian
+            const proxyBase = "https://corsproxy.io/?";
+            const targetUrl = "https://api.magnific.com/v1/motion-control";
+
             try {
-                // Menembak ke endpoint internal Vercel kita sendiri untuk mem-bypass CORS secara bersih
-                const response = await fetch('/api/generate', {
+                const response = await fetch(proxyBase + encodeURIComponent(targetUrl), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'X-Magnific-API-Key': apiKey,
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
-                        apiKey: apiKey,
                         model: model,
-                        prompt: prompt,
+                        prompt: prompt || "Smooth motion control tracking shot",
                         image_url: uploadedImageUrl,
                         video_url: uploadedVideoUrl || undefined,
-                        guidance_scale: cfg,
+                        cfg_scale: parseFloat(cfg),
                         character_orientation: orientation
                     })
                 });
 
                 const data = await response.json();
+                if (!response.ok) { throw new Error(data.message || "API menolak permintaan. Cek sisa kuota Key Anda."); }
 
-                if (!response.ok) {
-                    throw new Error(data.error || "Gagal memproses video di server.");
-                }
-
-                const taskId = data.task_id;
-                btn.innerText = "PROSES GENERATE VIDEO...";
-                checkStatus(taskId, apiKey);
+                const taskId = data.task_id || data.id;
+                document.getElementById('resultContainer').classList.remove('hidden');
+                document.getElementById('loadingStatus').classList.remove('hidden');
+                
+                checkVideoStatus(taskId, apiKey, proxyBase);
 
             } catch (error) {
-                alert("Error: " + error.message);
+                alert("Error saat generate: " + error.message);
                 resetButton();
             }
         });
 
-        async function checkStatus(taskId, apiKey) {
+        async function checkVideoStatus(taskId, apiKey, proxyBase) {
             const btn = document.getElementById('generateBtn');
-            const interval = setInterval(async () => {
+            const statusUrl = `https://api.magnific.com/v1/motion-control/task/${taskId}`;
+            
+            const timer = setInterval(async () => {
                 try {
-                    const res = await fetch(`/api/status?taskId=${taskId}&apiKey=${apiKey}`);
-                    const taskData = await res.json();
+                    const res = await fetch(proxyBase + encodeURIComponent(statusUrl), {
+                        headers: { 'X-Magnific-API-Key': apiKey }
+                    });
+                    const resData = await res.json();
 
-                    if (taskData.status === 'COMPLETED') {
-                        clearInterval(interval);
-                        document.getElementById('outputVideo').src = taskData.output_video_url;
-                        document.getElementById('downloadBtn').href = taskData.output_video_url;
-                        document.getElementById('resultContainer').classList.remove('hidden');
+                    if (resData.status === 'completed' || resData.status === 'COMPLETED') {
+                        clearInterval(timer);
+                        const finalVideoUrl = resData.output_video_url || resData.result;
+                        
+                        document.getElementById('loadingStatus').classList.add('hidden');
+                        
+                        const vWidget = document.getElementById('outputVideo');
+                        vWidget.src = finalVideoUrl;
+                        vWidget.classList.remove('hidden');
+                        
+                        const dlWidget = document.getElementById('downloadBtn');
+                        dlWidget.href = finalVideoUrl;
+                        dlWidget.classList.remove('hidden');
+                        
                         resetButton();
-                    } else if (taskData.status === 'FAILED') {
-                        clearInterval(interval);
-                        alert("Pembuatan video gagal di sisi antrean server AI.");
+                    } else if (resData.status === 'failed' || resData.status === 'FAILED') {
+                        clearInterval(timer);
+                        alert("Pembuatan video gagal di antrean server Magnific.");
                         resetButton();
                     } else {
-                        btn.innerText = `SEDANG MEMPROSES... (${taskData.progress || 'Antre'}%)`;
+                        btn.innerText = `PROSES GENERATE... (${resData.progress || 'Antre'}%)`;
                     }
-                } catch (err) {
-                    console.error(err);
+                } catch(e) {
+                    console.log("Menunggu antrean...");
                 }
-            }, 5000);
+            }, 6000);
         }
 
         function resetButton() {
