@@ -26,33 +26,43 @@
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
-            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Reference Image</label>
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Reference Image <span class="text-zinc-500 font-normal">JPG, PNG, WebP · maks 15 MB</span></label>
             <div class="border-2 border-dashed border-zinc-800 rounded-xl p-6 text-center cursor-pointer hover:border-amber-400 transition-colors relative bg-zinc-950">
                 <input type="file" id="imageInput" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
                 <span class="text-amber-400 text-2xl block mb-1">↑</span>
-                <p id="imageStatus" class="text-xs text-zinc-500">Klik atau drag gambar di sini (Maks 15MB)</p>
+                <p id="imageStatus" class="text-xs text-zinc-500">Klik atau drag gambar di sini</p>
             </div>
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
-            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Reference Video</label>
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Reference Video <span class="text-zinc-500 font-normal">MP4, MOV, WebM · maks 100 MB</span></label>
             <div class="border-2 border-dashed border-zinc-800 rounded-xl p-6 text-center cursor-pointer hover:border-amber-400 transition-colors relative bg-zinc-950">
                 <input type="file" id="videoInput" accept="video/*" class="absolute inset-0 opacity-0 cursor-pointer">
                 <span class="text-amber-400 text-2xl block mb-1">🎬</span>
-                <p id="videoStatus" class="text-xs text-zinc-500">Klik atau drag video di sini (Maks 100MB)</p>
+                <p id="videoStatus" class="text-xs text-zinc-500">Klik atau drag video di sini</p>
             </div>
             <p class="text-[10px] text-amber-400/70 mt-2">Gunakan video referensi dari TikTok agar ukurannya kecil</p>
         </div>
 
         <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
-            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Model AI</label>
-            <select id="modelSelect" class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 mb-4 text-white focus:outline-none focus:border-amber-400">
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Model</label>
+            <select id="modelSelect" class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 text-white focus:outline-none focus:border-amber-400">
                 <option value="kling-2.6">Kling 2.6 Standard</option>
                 <option value="luma-dream-machine">Luma Dream Machine</option>
             </select>
+        </div>
 
-            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Prompt (Opsional)</label>
-            <textarea id="promptInput" placeholder="Contoh: The character walks forward slowly..." class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 h-24 resize-none focus:outline-none focus:border-amber-400 text-white"></textarea>
+        <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Prompt <span class="text-zinc-500 font-normal">Opsional</span></label>
+            <textarea id="promptInput" placeholder="contoh: The character walks forward slowly..." class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 h-24 resize-none focus:outline-none focus:border-amber-400 text-white"></textarea>
+        </div>
+
+        <div class="mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
+            <label class="block text-xs font-bold text-zinc-400 mb-2 uppercase tracking-wider">Character Orientation</label>
+            <select id="orientationSelect" class="w-full bg-zinc-950 p-3 text-sm rounded-xl border border-zinc-800 text-white focus:outline-none focus:border-amber-400">
+                <option value="video">Video (default)</option>
+                <option value="image">Image</option>
+            </select>
         </div>
 
         <div class="mb-6 bg-zinc-900 p-4 rounded-2xl border border-zinc-800/80">
@@ -62,8 +72,8 @@
             </div>
             <input type="range" id="cfgScale" min="0" max="1" step="0.05" value="0.50" class="w-full accent-amber-400 bg-zinc-950 h-2 rounded-lg appearance-none cursor-pointer">
             <div class="flex justify-between text-[10px] text-zinc-500 mt-1">
-                <span>0 = Bebas</span>
-                <span>1 = Ketat</span>
+                <span>0 = bebas</span>
+                <span>1 = ketat</span>
             </div>
         </div>
     </div>
@@ -76,28 +86,56 @@
         <div id="resultContainer" class="mt-6 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl hidden">
             <h3 class="text-xs font-bold text-zinc-400 mb-3 uppercase tracking-wider">Hasil Video Anda:</h3>
             <video id="outputVideo" controls class="w-full rounded-xl border border-zinc-950 bg-black"></video>
-            <a id="downloadBtn" href="#" download="ai-video.mp4" class="block text-center mt-3 text-xs bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700">Unduh Video</a>
+            <a id="downloadBtn" href="#" download="keyden-ai-video.mp4" class="block text-center mt-3 text-xs bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700">Unduh Video</a>
         </div>
     </div>
 
     <script>
-        // Status upload gambar
+        let uploadedImageUrl = "";
+        let uploadedVideoUrl = "";
+
+        // Fungsi bantu upload file media ke server pihak ketiga (tmpfiles.org) agar dpt URL publik secara gratis
+        async function uploadFileToInternet(file) {
+            const formData = new FormData();
+            formData.append("file", file);
+            const res = await fetch("https://tmpfiles.org/api/v1/upload", { method: "POST", body: formData });
+            if (!res.ok) throw new Error("Gagal mengunggah file referensi ke server penyimpanan.");
+            const data = await res.json();
+            // Mengubah URL view menjadi URL direct file mentah
+            return data.data.url.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+        }
+
+        // Listener input file gambar
         const imageInput = document.getElementById('imageInput');
         const imageStatus = document.getElementById('imageStatus');
-        imageInput.addEventListener('change', () => {
+        imageInput.addEventListener('change', async () => {
             if(imageInput.files.length > 0) {
-                imageStatus.innerText = "Gambar terpilih: " + imageInput.files[0].name;
-                imageStatus.className = "text-xs text-amber-400 font-semibold";
+                imageStatus.innerText = "Mengunggah gambar...";
+                try {
+                    uploadedImageUrl = await uploadFileToInternet(imageInput.files[0]);
+                    imageStatus.innerText = "Gambar siap: " + imageInput.files[0].name;
+                    imageStatus.className = "text-xs text-amber-400 font-semibold";
+                } catch(e) {
+                    alert(e.message);
+                    imageStatus.innerText = "Gagal mengunggah gambar.";
+                }
             }
         });
 
-        // Status upload video
+        // Listener input file video
         const videoInput = document.getElementById('videoInput');
         const videoStatus = document.getElementById('videoStatus');
-        videoInput.addEventListener('change', () => {
+        videoInput.addEventListener('change', async () => {
             if(videoInput.files.length > 0) {
-                videoStatus.innerText = "Video terpilih: " + videoInput.files[0].name;
-                videoStatus.className = "text-xs text-amber-400 font-semibold";
+                videoStatus.innerText = "Mengunggah video...";
+                try {
+                    uploadedVideoUrl = await uploadFileToInternet(videoInput.files[0]);
+                    videoStatus.innerText = "Video siap: " + videoInput.files[0].name;
+                    videoStatus.className = "text-xs text-amber-400 font-semibold";
+                } catch(e) {
+                    alert(e.message);
+                    videoStatus.innerText = "Gagal mengunggah video.";
+                }
             }
         });
 
@@ -108,15 +146,20 @@
             cfgValue.innerText = parseFloat(cfgScale.value).toFixed(2);
         });
 
-        // Logika Klik Generate
+        // Aksi Tombol Utama
         document.getElementById('generateBtn').addEventListener('click', async () => {
             const apiKey = document.getElementById('apiKey').value.trim();
             const prompt = document.getElementById('promptInput').value;
             const model = document.getElementById('modelSelect').value;
             const cfg = document.getElementById('cfgScale').value;
+            const orientation = document.getElementById('orientationSelect').value;
 
             if (!apiKey) {
                 alert("Mohon masukkan API Key Freepik/Magnific Anda terlebih dahulu!");
+                return;
+            }
+            if (!uploadedImageUrl) {
+                alert("Mohon pilih dan tunggu upload Gambar Referensi selesai!");
                 return;
             }
 
@@ -125,8 +168,12 @@
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
 
+            // Menggunakan CORS proxy publik gratisan untuk menghindari eror "Failed to fetch"
+            const proxyUrl = "https://corsproxy.io/?";
+            const targetApiUrl = "https://api.freepik.com/v1/ai/video-generation";
+
             try {
-                const response = await fetch('https://api.freepik.com/v1/ai/video-generation', {
+                const response = await fetch(proxyUrl + encodeURIComponent(targetApiUrl), {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -134,20 +181,24 @@
                     },
                     body: JSON.stringify({
                         model: model,
-                        prompt: prompt || "Smooth cinematic motion control effect",
-                        guidance_scale: parseFloat(cfg)
+                        prompt: prompt || "Smooth motion control tracking shot",
+                        image_url: uploadedImageUrl,
+                        video_url: uploadedVideoUrl || undefined, // Opsional jika dimasukkan
+                        guidance_scale: parseFloat(cfg),
+                        character_orientation: orientation
                     })
                 });
 
                 if (!response.ok) {
-                    throw new Error("Gagal terhubung ke API. Cek API Key Anda.");
+                    const errorText = await response.text();
+                    throw new Error("Respon API Gagal. Pastikan kuota API Key aktif.");
                 }
 
                 const data = await response.json();
                 const taskId = data.task_id;
 
                 btn.innerText = "PROSES GENERATE VIDEO...";
-                checkStatus(taskId, apiKey);
+                checkStatus(taskId, apiKey, proxyUrl);
 
             } catch (error) {
                 alert("Error: " + error.message);
@@ -155,11 +206,13 @@
             }
         });
 
-        async function checkStatus(taskId, apiKey) {
+        async function checkStatus(taskId, apiKey, proxyUrl) {
             const btn = document.getElementById('generateBtn');
+            const checkUrl = `https://api.freepik.com/v1/ai/tasks/${taskId}`;
+            
             const interval = setInterval(async () => {
                 try {
-                    const res = await fetch(`https://api.freepik.com/v1/ai/tasks/${taskId}`, {
+                    const res = await fetch(proxyUrl + encodeURIComponent(checkUrl), {
                         headers: { 'Authorization': `Bearer ${apiKey}` }
                     });
                     const taskData = await res.json();
@@ -172,7 +225,7 @@
                         resetButton();
                     } else if (taskData.status === 'FAILED') {
                         clearInterval(interval);
-                        alert("Pembuatan video gagal diproses.");
+                        alert("Pembuatan video gagal di sisi server AI.");
                         resetButton();
                     } else {
                         btn.innerText = `SEDANG MEMPROSES... (${taskData.progress || 'Antre'}%)`;
