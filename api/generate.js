@@ -29,7 +29,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // ENDPOINT RESMI UTAMA UNTUK DAFTAR ANTREAN MAGNIFIC AI
+        // URL ENDPOINT UTAMA ANTREAN RESMI MAGNIFIC AI
         const TASKS_URL = 'https://api.magnific.ai/v1/tasks';
 
         // JALUR 1: Mengecek Progress Status Antrean (Polling)
@@ -50,16 +50,16 @@ module.exports = async (req, res) => {
                     return res.status(response.status).json({ error: jsonData.detail || 'Gagal memantau status antrean.' });
                 }
                 return res.status(200).json({
-                    status: jsonData.status, // pending, processing, completed, failed
+                    status: jsonData.status, 
                     progress: jsonData.progress || 0,
                     output_video_url: jsonData.result ? (jsonData.result.output_video_url || jsonData.result.output || jsonData.result) : null
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: `Gagal membaca update status harian (${response.status}).` });
+                return res.status(response.status).json({ error: `Gagal membaca update status (${response.status}).` });
             }
         }
 
-        // JALUR 2: Mendaftarkan Pembuatan Video Kontrol Baru (Generate Task)
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru
         // 🧠 MODE DETEKTIF: Otomatis memilah string link internet dari form front-end Anda
         let detectedImageUrl = null;
         let detectedVideoUrl = null;
@@ -76,7 +76,7 @@ module.exports = async (req, res) => {
             }
         }
 
-        // Fallback pencarian manual jika struktur nama variabel berubah-ubah
+        // Ambil link hasil deteksi atau gunakan fallback variabel bawaan
         const finalImageUrl = detectedImageUrl || body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = detectedVideoUrl || body.video_url || body.video || body.videoUrl;
         
@@ -86,10 +86,10 @@ module.exports = async (req, res) => {
         const finalOrientation = body.character_orientation || body.orientation || "video";
 
         if (!finalImageUrl || finalImageUrl.trim() === "") {
-            return res.status(400).json({ error: "Eror internal: Gambar utama tidak berhasil terdeteksi oleh mesin pelacak backend." });
+            return res.status(400).json({ error: "Backend gagal mendeteksi gambar utama. Pastikan gambar sudah terunggah." });
         }
 
-        // Menyusun parameter internal khusus pengerjaan video kontrol Magnific
+        // ⚠️ STRUKTUR BARU: Wajib dibungkus di dalam objek 'parameters' agar tidak memicu 404
         const taskParameters = {
             image_url: String(finalImageUrl),
             guidance_scale: parseFloat(finalGuidance) || 0.5
@@ -104,7 +104,7 @@ module.exports = async (req, res) => {
             taskParameters.prompt = String(finalPrompt);
         }
 
-        // Struktur payload resmi wajib Magnific Task API
+        // Payload utama dengan bungkus parameters yang disukai server Magnific terbaru
         const mainPayload = {
             task_type: "video_control",
             model: String(finalModel),
@@ -126,20 +126,19 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                // Deteksi jika limit harian 5 video dari API Key gratisan Anda habis
                 if (response.status === 403 || responseText.includes("limit") || responseText.includes("quota")) {
                     return res.status(403).json({ error: "Limit kuota API Key gratisan Anda sudah habis (Maks 5 video). Silakan ganti ke API Key baru." });
                 }
                 return res.status(response.status).json({ error: data.detail || 'Akses ditolak oleh pihak Magnific.' });
             }
             
-            // Melempar ID Tugas secara rapi ke index.html Anda untuk mulai proses hitung mundur / loading %
+            // Mengembalikan task_id agar front-end index.html bisa mulai melakukan polling progress %
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Gagal memproses respons balik Magnific (${response.status}). Mohon cek masa aktif API Key Anda.` });
+            return res.status(response.status).json({ error: `Eror struktur data (${response.status}). Coba buat API Key baru jika masalah berlanjut.` });
         }
 
     } catch (error) {
