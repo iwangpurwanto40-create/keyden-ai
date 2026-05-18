@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-    // Mengatur header agar website Anda bisa mengakses fungsi ini tanpa hambatan CORS
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -21,11 +20,12 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'API Key diperlukan' });
         }
 
-        // Server Vercel mengirim permintaan langsung ke API Freepik
+        // PERBAIKAN: Mengirimkan header otentikasi ganda agar kompatibel dengan Freepik maupun sistem Magnific asli
         const response = await fetch('https://api.freepik.com/v1/ai/video-generation', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
+                'X-Magnific-API-Key': apiKey, 
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
         const data = await response.json();
 
         if (!response.ok) {
-            return res.status(response.status).json({ error: data.message || 'Gagal terhubung ke Freepik AI' });
+            return res.status(response.status).json({ error: data.message || 'Gagal divalidasi oleh server AI. Pastikan API Key Anda benar dan memiliki kuota.' });
         }
 
         return res.status(200).json(data);
