@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS untuk akses browser HP
+    // Pengaturan CORS agar tidak diblokir oleh browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -20,13 +20,17 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { apiKey, taskId, checkStatus, model, prompt, image_url, video_url, guidance_scale, character_orientation } = req.body;
+        // Membaca kiriman request body
+        const body = req.body || {};
+        const apiKey = body.apiKey;
+        const taskId = body.taskId;
+        const checkStatus = body.checkStatus;
 
         if (!apiKey) {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // JALUR 1: Mengecek Status Hasil Antrean Video (Menggunakan /v1/tasks/)
+        // JALUR 1: Pengecekan Status Antrean Video (Polling)
         if (checkStatus && taskId) {
             const statusUrl = `https://api.magnific.ai/v1/tasks/${taskId}`;
             const response = await fetch(statusUrl, {
@@ -41,39 +45,53 @@ module.exports = async (req, res) => {
             try {
                 const jsonData = JSON.parse(textData);
                 if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengambil status antrean.' });
+                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengambil status.' });
                 }
-                
                 return res.status(200).json({
-                    status: jsonData.status, // 'pending', 'processing', 'completed', 'failed'
+                    status: jsonData.status,
                     progress: jsonData.progress || 0,
                     output_video_url: jsonData.result ? (jsonData.result.output || jsonData.result) : null
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: `Gagal membaca status data (${response.status}).` });
+                return res.status(response.status).json({ error: `Gagal membaca status (${response.status}).` });
             }
         }
 
-        // JALUR 2: Mengirim Perintah Pembuatan Video Kontrol Baru (Menggunakan /v1/video/control)
+        // JALUR 2: Pembuatan Video Baru (Generate)
         const generateUrl = 'https://api.magnific.ai/v1/video/control';
         
+        // SISTEM DETEKSI OTOMATIS: Membaca variasi nama variabel dari front-end Anda
+        const finalImageUrl = body.image_url || body.image || body.imageUrl;
+        const finalVideoUrl = body.video_url || body.video || body.videoUrl;
+        const finalPrompt = body.prompt || body.textPrompt || "";
+        const finalModel = body.model || "kling-v2.6";
+        const finalGuidance = body.guidance_scale || body.guidance || 0.5;
+        const finalOrientation = body.character_orientation || body.orientation || "video";
+
+        // Validasi input gambar utama
+        if (!finalImageUrl || String(finalImageUrl).trim() === "") {
+            return res.status(400).json({ error: "Gagal memproses: Gambar referensi utama tidak terdeteksi oleh backend. Periksa upload Anda." });
+        }
+
+        // Menyusun payload bersih murni untuk Magnific
         const payload = {
-            model: model || 'kling-v2.6',
-            image_url: String(image_url),
-            guidance_scale: parseFloat(guidance_scale) || 0.5
+            model: String(finalModel),
+            image_url: String(finalImageUrl),
+            guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Sertakan file referensi video jika ada
-        if (video_url && video_url.trim() !== "") {
-            payload.video_url = String(video_url);
-            payload.character_orientation = character_orientation || 'video';
-        }
-        
-        // Sertakan perintah teks jika diisi
-        if (prompt && prompt.trim() !== "") {
-            payload.prompt = String(prompt);
+        // Hanya masukkan video jika front-end mengirimkan file video gaul-geol
+        if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
+            payload.video_url = String(finalVideoUrl);
+            payload.character_orientation = String(finalOrientation);
         }
 
+        // Hanya masukkan prompt jika ada teks tertulis
+        if (finalPrompt && String(finalPrompt).trim() !== "") {
+            payload.prompt = String(finalPrompt);
+        }
+
+        // Mengirim data ke Magnific AI
         const response = await fetch(generateUrl, {
             method: 'POST',
             headers: {
@@ -89,24 +107,21 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                // Deteksi jika sisa jatah 5 video pada API Key baru Anda sudah habis tercapai
                 if (response.status === 403 || responseText.includes("limit") || responseText.includes("quota")) {
-                    return res.status(403).json({ error: "Limit kuota pembuatan video untuk API Key ini sudah habis. Silakan buat/gunakan API Key baru." });
+                    return res.status(403).json({ error: "Limit kuota API Key gratisan Anda sudah habis (Maks 5 video). Silakan ganti ke API Key baru." });
                 }
-                return res.status(response.status).json({ error: data.detail || 'Permintaan ditolak server Magnific.' });
+                return res.status(response.status).json({ error: data.detail || 'Permintaan ditolak oleh Magnific.' });
             }
             
-            // Melempar ID Tugas yang sukses didaftarkan ke index.html Anda
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            // Jika merespons 404, berarti ada parameter payload yang tidak sesuai tipe datanya
             if (response.status === 404) {
-                return res.status(404).json({ error: "Gagal memproses (404). Pastikan link gambar/video referensi Anda valid dan bisa diakses publik." });
+                return res.status(404).json({ error: "Eror 404: Link gambar/video gagal dikirim atau format data front-end Anda tidak cocok dengan back-end." });
             }
-            return res.status(response.status).json({ error: `Respons luar biasa dari server (${response.status}).` });
+            return res.status(response.status).json({ error: `Respons tidak dikenal (${response.status}).` });
         }
 
     } catch (error) {
