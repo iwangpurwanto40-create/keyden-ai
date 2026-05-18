@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS untuk akses browser HP
+    // Pengaturan CORS agar bisa diakses browser HP Anda
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -23,15 +23,12 @@ module.exports = async (req, res) => {
         const { apiKey, taskId, checkStatus, model, prompt, image_url, video_url, guidance_scale, character_orientation } = req.body;
 
         if (!apiKey) {
-            return res.status(400).json({ error: 'API Key wajib diisi!' });
+            return res.status(400).json({ error: 'API Key Magnific wajib diisi!' });
         }
 
-        // RUTE ALTERNATIF: Menggunakan rute root v1/worker untuk deteksi tugas
-        const BASE_URL = 'https://api.magnific.ai/v1';
-
-        // JALUR 1: Jika sistem sedang mengecek status antrean video
+        // JALUR 1: Mengecek Status Hasil Video Berdasarkan Task ID
         if (checkStatus && taskId) {
-            const statusUrl = `${BASE_URL}/tasks/${taskId}`;
+            const statusUrl = `https://api.magnific.ai/v1/tasks/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -44,33 +41,45 @@ module.exports = async (req, res) => {
             try {
                 const jsonData = JSON.parse(textData);
                 if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengambil status antrean.' });
+                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal mengecek status antrean.' });
                 }
-                return res.status(200).json(jsonData);
+                
+                // Menyesuaikan status keluaran Magnific AI
+                return res.status(200).json({
+                    status: jsonData.status, // 'pending', 'processing', 'completed', 'failed'
+                    progress: jsonData.progress || 0,
+                    output_video_url: jsonData.result ? jsonData.result.output : null
+                });
             } catch (e) {
-                return res.status(response.status).json({ error: `Server Magnific merespons dengan status ${response.status}.` });
+                return res.status(response.status).json({ error: `Server Magnific merespons dengan kode ${response.status}.` });
             }
         }
 
-        // JALUR 2: Mengirim perintah pembuatan video baru (Generate)
-        // Menggunakan endpoint /v1/video untuk pembuatan control video langsung
-        const generateUrl = `${BASE_URL}/video`;
+        // JALUR 2: Membuat Tugas Pembuatan Video Baru (Task Generation)
+        // Ini adalah endpoint universal Magnific untuk mendaftarkan proses AI berdurasi panjang
+        const generateUrl = 'https://api.magnific.ai/v1/tasks';
         
-        const payload = {
-            model: model || 'kling-v2.6',
+        // Membangun struktur parameter wajib untuk model video kontrol Magnific
+        const parameters = {
             image_url: String(image_url),
-            guidance_scale: parseFloat(guidance_scale) || 0.5
+            guidance_scale: parseFloat(guidance_scale) || 0.50
         };
 
-        // Memasukkan input video jika ada referensi video yang berhasil diunggah
         if (video_url && video_url.trim() !== "") {
-            payload.video_url = String(video_url);
-            payload.character_orientation = character_orientation || 'video';
+            parameters.video_url = String(video_url);
+            parameters.character_orientation = character_orientation || 'video';
         }
         
         if (prompt && prompt.trim() !== "") {
-            payload.prompt = String(prompt);
+            parameters.prompt = String(prompt);
         }
+
+        // Payload wajib mengikuti standard task creation Magnific
+        const payload = {
+            task_type: "video_control", // Mengunci tipe tugas ke kontrol video AI
+            model: model || 'kling-v2.6',
+            parameters: parameters
+        };
 
         const response = await fetch(generateUrl, {
             method: 'POST',
@@ -88,18 +97,20 @@ module.exports = async (req, res) => {
             const data = JSON.parse(responseText);
             if (!response.ok) {
                 if (response.status === 401) {
-                    return res.status(401).json({ error: "API Key salah atau tidak valid. Periksa kembali key Anda." });
+                    return res.status(401).json({ error: "API Key salah atau tidak memiliki izin akses (Unauthorized)." });
                 }
-                const errMsg = data.detail || (data.error ? data.error.message : 'Ditolak oleh server Magnific.');
-                return res.status(response.status).json({ error: errMsg });
+                return res.status(response.status).json({ error: data.detail || 'Permintaan ditolak oleh Magnific.' });
             }
-            return res.status(200).json(data);
+            
+            // Mengirimkan Task ID yang berhasil dibuat ke frontend index.html
+            return res.status(200).json({
+                task_id: data.id || data.task_id
+            });
+
         } catch (jsonEror) {
-            if (response.status === 404) {
-                // Skema fallback jika endpoint /video langsung juga memberikan respons 404
-                return res.status(404).json({ error: "Rute API Magnific tidak merespons (404). Pastikan langganan API Key Anda mengizinkan akses ke model video." });
-            }
-            return res.status(response.status).json({ error: `Gagal memproses data server Magnific (${response.status}).` });
+            return res.status(response.status).json({ 
+                error: `Gagal memproses respons balik Magnific (${response.status}). Hubungi penyedia API Key Anda untuk memastikan paket Anda mendukung Video API.` 
+            });
         }
 
     } catch (error) {
