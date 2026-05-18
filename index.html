@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saken Geal-Geol - Motion Control</title>
+    <title>Keyden AI - Motion Control</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         body { background-color: #0d0d0d; color: #e5e7eb; font-family: sans-serif; }
@@ -13,8 +13,8 @@
 
     <div>
         <div class="text-center my-6">
-            <h1 class="text-3xl font-black text-amber-400 tracking-wider">SAKEN GEAL-GEOL</h1>
-            <p class="text-xs text-zinc-400 mt-1">motion control generator by SAKURA</p>
+            <h1 class="text-3xl font-black text-amber-400 tracking-wider">KEYDEN AI</h1>
+            <p class="text-xs text-zinc-400 mt-1">motion control generator by Keyden</p>
             <div class="inline-block bg-zinc-900 border border-zinc-800 text-amber-400 text-xs px-3 py-1 rounded-full mt-3 font-semibold">
                 ● Ready to Generate
             </div>
@@ -156,7 +156,6 @@
             loadStatus.innerText = "Mengirim data antrean ke backend Vercel...";
 
             try {
-                // Memanggil backend internal Vercel secara aman dan bebas CORS
                 const response = await fetch('/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -188,7 +187,6 @@
             
             const timer = setInterval(async () => {
                 try {
-                    // Pengecekan status melalui backend internal agar stabil
                     const res = await fetch('/api/generate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
