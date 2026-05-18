@@ -156,7 +156,8 @@
             loadStatus.innerText = "Mengirim data antrean ke backend Vercel...";
 
             try {
-                const response = await fetch('/api/generate', {
+                // Diperbarui: Menggunakan jalur /api/generate.js secara spesifik
+                const response = await fetch('/api/generate.js', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -187,7 +188,8 @@
             
             const timer = setInterval(async () => {
                 try {
-                    const res = await fetch('/api/generate', {
+                    // Diperbarui: Menggunakan jalur /api/generate.js secara spesifik
+                    const res = await fetch('/api/generate.js', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ apiKey, taskId, checkStatus: true })
