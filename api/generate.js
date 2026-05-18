@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar tidak diblokir oleh browser HP
+    // Pengaturan CORS biar browser HP Anda bebas akses
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -20,7 +20,6 @@ module.exports = async (req, res) => {
     }
 
     try {
-        // Membaca kiriman request body
         const body = req.body || {};
         const apiKey = body.apiKey;
         const taskId = body.taskId;
@@ -30,7 +29,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // JALUR 1: Pengecekan Status Antrean Video (Polling)
+        // JALUR 1: Cek Status Antrean (Polling)
         if (checkStatus && taskId) {
             const statusUrl = `https://api.magnific.ai/v1/tasks/${taskId}`;
             const response = await fetch(statusUrl, {
@@ -59,39 +58,63 @@ module.exports = async (req, res) => {
 
         // JALUR 2: Pembuatan Video Baru (Generate)
         const generateUrl = 'https://api.magnific.ai/v1/video/control';
+
+        // 🧠 MODE DETEKTIF: Cari otomatis string URL gambar dan video di dalam request body
+        let detectedImageUrl = null;
+        let detectedVideoUrl = null;
+
+        // Ambil semua kunci variabel yang dikirim oleh front-end
+        const keys = Object.keys(body);
+        for (let key of keys) {
+            const value = String(body[key]);
+            // Jika isi variabel berupa link internet (http:// atau https://)
+            if (value.startsWith('http://') || value.startsWith('https://')) {
+                // Deteksi jika itu video
+                if (value.match(/\.(mp4|webm|mov|avi)/i) || key.toLowerCase().includes('video')) {
+                    detectedVideoUrl = value;
+                } 
+                // Deteksi jika itu gambar
+                else if (value.match(/\.(jpg|jpeg|png|webp|gif)/i) || key.toLowerCase().includes('image') || key.toLowerCase().includes('img')) {
+                    detectedImageUrl = value;
+                }
+            }
+        }
+
+        // Jika pencarian otomatis gagal, gunakan fallback manual dari nama variabel standar
+        const finalImageUrl = detectedImageUrl || body.image_url || body.image || body.imageUrl;
+        const finalVideoUrl = detectedVideoUrl || body.video_url || body.video || body.videoUrl;
         
-        // SISTEM DETEKSI OTOMATIS: Membaca variasi nama variabel dari front-end Anda
-        const finalImageUrl = body.image_url || body.image || body.imageUrl;
-        const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || body.textPrompt || "";
         const finalModel = body.model || "kling-v2.6";
         const finalGuidance = body.guidance_scale || body.guidance || 0.5;
         const finalOrientation = body.character_orientation || body.orientation || "video";
 
-        // Validasi input gambar utama
-        if (!finalImageUrl || String(finalImageUrl).trim() === "") {
-            return res.status(400).json({ error: "Gagal memproses: Gambar referensi utama tidak terdeteksi oleh backend. Periksa upload Anda." });
+        // Validasi Akhir Gambar Utama
+        if (!finalImageUrl || finalImageUrl.trim() === "") {
+            return res.status(400).json({ 
+                error: "Backend Gagal Mendeteksi Gambar! Front-end Anda mengirimkan data ini: " + JSON.stringify(body) 
+            });
         }
 
-        // Menyusun payload bersih murni untuk Magnific
+        // Susun payload resmi untuk Magnific AI
         const payload = {
             model: String(finalModel),
             image_url: String(finalImageUrl),
             guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Hanya masukkan video jika front-end mengirimkan file video gaul-geol
-        if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
+        // Masukkan video jika ditemukan
+        if (finalVideoUrl && finalVideoUrl.trim() !== "") {
             payload.video_url = String(finalVideoUrl);
             payload.character_orientation = String(finalOrientation);
         }
 
-        // Hanya masukkan prompt jika ada teks tertulis
-        if (finalPrompt && String(finalPrompt).trim() !== "") {
+        // Masukkan prompt jika ada isinya
+        if (finalPrompt && finalPrompt.trim() !== "") {
             payload.prompt = String(finalPrompt);
         }
 
-        // Mengirim data ke Magnific AI
+        // Kirim data ke Magnific AI
         const response = await fetch(generateUrl, {
             method: 'POST',
             headers: {
@@ -119,7 +142,7 @@ module.exports = async (req, res) => {
 
         } catch (jsonEror) {
             if (response.status === 404) {
-                return res.status(404).json({ error: "Eror 404: Link gambar/video gagal dikirim atau format data front-end Anda tidak cocok dengan back-end." });
+                return res.status(404).json({ error: "Eror 404 Magnific: Endpoint tujuan salah atau tidak merespons perintah video." });
             }
             return res.status(response.status).json({ error: `Respons tidak dikenal (${response.status}).` });
         }
