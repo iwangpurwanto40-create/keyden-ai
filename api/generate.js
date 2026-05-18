@@ -1,5 +1,5 @@
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar tidak diblokir browser HP
+    // Pengaturan CORS
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -13,11 +13,22 @@ module.exports = async (req, res) => {
         return;
     }
 
-    // KITA PAKSA SERVER UNTUK MENAMPILKAN ISI DATA YANG DIKIRIM OLEH HP ANDA
-    const dataYangDiterimaBackend = req.body || {};
+    const dataHP = req.body || {};
+
+    // KITA GA KAN PAKAI JSON, TAPI KIRIM TEKS BERSIH BERSKALA BESAR
+    res.setHeader('Content-Type', 'text/plain');
     
-    return res.status(400).json({
-        error: "🔍 [MODE DEBUG KEYDEN] Berhasil menangkap data dari HP Anda! Silakan screenshot layar ini dan kirim ke saya agar saya bisa melihat strukturnya.",
-        isi_data_anda: dataYangDiterimaBackend
-    });
+    const teksAnalisis = `
+==================================================
+🔍 STRUKTUR DATA ASLI DARI HP KEYDEN
+==================================================
+Kunci data yang dikirim: ${JSON.stringify(Object.keys(dataHP))}
+
+Isi lengkap paket data:
+${JSON.stringify(dataHP, null, 4)}
+==================================================
+`;
+
+    // Kirim status 400 tapi isinya teks murni agar nembus ke layar browser
+    return res.status(400).send(teksAnalisis);
 };
