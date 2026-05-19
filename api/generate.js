@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS terlengkap agar aman diakses dari browser HP
+    // Pengaturan CORS Terlengkap agar lancar diakses dari browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,14 +29,15 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // Endpoint Tunggal Resmi Magnific AI
-        const TASKS_URL = 'https://api.magnific.ai/v1/tasks';
+        // 🌟 ENDPOINT BARU KHUSUS VIDEO (Bukan /v1/tasks lagi)
+        const BASE_VIDEO_URL = 'https://api.magnific.ai/v1/video';
 
         // ---------------------------------------------------------------------
         // JALUR 1: Memantau Progress Status Video (Polling)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            const statusUrl = `${TASKS_URL}/${taskId}`;
+            // Mengecek antrean video langsung ke endpoint video/[id]
+            const statusUrl = `${BASE_VIDEO_URL}/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -49,7 +50,7 @@ module.exports = async (req, res) => {
             try {
                 const jsonData = JSON.parse(textData);
                 if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal memantau status antrean.' });
+                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal memantau status antrean video.' });
                 }
                 
                 let videoHasil = null;
@@ -63,12 +64,12 @@ module.exports = async (req, res) => {
                     output_video_url: videoHasil
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: 'Gagal membaca update status antrean.' });
+                return res.status(response.status).json({ error: 'Gagal membaca status perkembangan video.' });
             }
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Mendaftarkan Pembuatan Video Baru (Flat/Root Structure)
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru
         // ---------------------------------------------------------------------
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
@@ -80,7 +81,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar referensi terlebih dahulu." });
         }
 
-        // Konversi penamaan model sesuai format resmi Magnific (garis bawah)
+        // Penerjemah nama kode model otomatis (wajib menggunakan garis bawah '_')
         let cleanModel = "kling_v2_6"; 
         const modelText = String(rawModel).toLowerCase();
 
@@ -96,26 +97,25 @@ module.exports = async (req, res) => {
             cleanModel = String(rawModel).trim().replace(/-/g, '_');
         }
 
-        // ⚠️ STRUKTUR BARU: Semua parameter ditaruh di root utama, TIDAK pakai objek 'parameters' lagi
+        // Struktur data flat (tingkat utama) yang diminta oleh endpoint /v1/video
         const mainPayload = {
-            task_type: "video_generation",
             model: cleanModel,
             image_url: String(finalImageUrl),
             guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Sertakan video referensi jika ada
+        // Tambahkan opsional video jika ada gerakan referensi
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
             mainPayload.video_url = String(finalVideoUrl);
         }
 
-        // Sertakan prompt teks jika diisi
+        // Tambahkan teks prompt instruksi jika diisi
         if (finalPrompt && String(finalPrompt).trim() !== "") {
             mainPayload.prompt = String(finalPrompt);
         }
 
-        // Kirim data ke Magnific
-        const response = await fetch(TASKS_URL, {
+        // Tembak langsung ke endpoint pembuatan video baru Magnific
+        const response = await fetch(BASE_VIDEO_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -130,17 +130,16 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                return res.status(response.status).json({ error: data.detail || `Magnific menolak: ${responseText}` });
+                return res.status(response.status).json({ error: data.detail || `Sistem Magnific menolak: ${responseText}` });
             }
             
-            // Kembalikan ID task ke front-end
+            // Berhasil mendapatkan ID antrean, kirim ke front-end halaman web lu
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            // Jika masuk ke sini, kita muntahkan isi teks aslinya biar kelihatan eror apa dari Magnific
-            return res.status(response.status).json({ error: `Eror Respons Server (${response.status}): ${responseText.substring(0, 120)}` });
+            return res.status(response.status).json({ error: `Eror Struktural Server (${response.status}): ${responseText.substring(0, 120)}` });
         }
 
     } catch (error) {
