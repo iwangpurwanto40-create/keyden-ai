@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS terlengkap agar aman diakses dari browser HP
+    // Pengaturan CORS agar aman diakses dari browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,14 +29,12 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // Endpoint resmi Magnific untuk sistem antrean (Tasks)
-        const TASKS_URL = 'https://api.magnific.ai/v1/tasks';
-
         // ---------------------------------------------------------------------
         // JALUR 1: Memantau Progress Status Video (Polling)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            const statusUrl = `${TASKS_URL}/${taskId}`;
+            // Cek status antrean video menggunakan endpoint tasks tracking
+            const statusUrl = `https://api.magnific.ai/v1/tasks/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -52,7 +50,6 @@ module.exports = async (req, res) => {
                     return res.status(response.status).json({ error: jsonData.detail || 'Gagal memantau status antrean.' });
                 }
                 
-                // Ambil link video hasil jadi jika statusnya sudah 'completed'
                 let videoHasil = null;
                 if (jsonData.result) {
                     videoHasil = jsonData.result.output_video_url || jsonData.result.output || jsonData.result;
@@ -69,8 +66,11 @@ module.exports = async (req, res) => {
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Mendaftarkan Pembuatan Video Baru ke Magnific
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru (Sesuai Endpoint Resmi)
         // ---------------------------------------------------------------------
+        // Endpoint khusus untuk Video Control / Image-to-Video Magnific
+        const VIDEO_CONTROL_URL = 'https://api.magnific.ai/v1/video/control';
+
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
@@ -82,12 +82,12 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar referensi terlebih dahulu." });
         }
 
-        // 🔄 KAMUS PENERJEMAH MODEL (Kunci penentu bebas eror 404)
+        // Normalisasi format string nama model untuk Magnific
         let cleanModel = "kling_v2_6"; 
         const modelText = String(rawModel).toLowerCase();
 
         if (modelText.includes("kling") && modelText.includes("2.6")) {
-            cleanModel = "kling_v2_6"; // Format resmi Magnific menggunakan garis bawah
+            cleanModel = "kling_v2_6";
         } else if (modelText.includes("kling") && modelText.includes("2.5")) {
             cleanModel = "kling_v2_5";
         } else if (modelText.includes("luma")) {
@@ -95,36 +95,29 @@ module.exports = async (req, res) => {
         } else if (modelText.includes("runway") || modelText.includes("gen3")) {
             cleanModel = "runway_gen3";
         } else {
-            // Jika dikirim format lain, kita ubah tanda strip menjadi garis bawah agar aman
             cleanModel = String(rawModel).trim().replace(/-/g, '_');
         }
 
-        // Susun parameter internal wajib masuk ke dalam objek 'parameters'
-        const taskParameters = {
+        // Susun payload langsung murni ke root objek sesuai spesifikasi endpoint /video/control
+        const mainPayload = {
+            model: cleanModel,
             image_url: String(finalImageUrl),
             guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Jika user menyertakan video referensi (Video-to-Video / Control)
+        // Jika ada video referensi tambahan
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
-            taskParameters.video_url = String(finalVideoUrl);
-            taskParameters.character_orientation = String(finalOrientation);
+            mainPayload.video_url = String(finalVideoUrl);
+            mainPayload.character_orientation = String(finalOrientation);
         }
 
-        // Jika user mengisi deskripsi teks prompt
+        // Jika ada prompt teks
         if (finalPrompt && String(finalPrompt).trim() !== "") {
-            taskParameters.prompt = String(finalPrompt);
+            mainPayload.prompt = String(finalPrompt);
         }
 
-        // Paket data final sesuai standard baku Magnific AI Task Endpoint terbaru
-        const mainPayload = {
-            task_type: "video_control",
-            model: cleanModel,
-            parameters: taskParameters
-        };
-
-        // Kirim perintah ke server luar Magnific
-        const response = await fetch(TASKS_URL, {
+        // Kirim request langsung ke endpoint video control
+        const response = await fetch(VIDEO_CONTROL_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -139,13 +132,10 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                if (response.status === 403 || responseText.includes("limit") || responseText.includes("quota")) {
-                    return res.status(403).json({ error: "Kuota limit API Key gratisan Anda sudah habis. SIlakan gunakan API Key baru." });
-                }
-                return res.status(response.status).json({ error: data.detail || `Magnific menolak permintaan: ${responseText}` });
+                return res.status(response.status).json({ error: data.detail || `Magnific menolak: ${responseText}` });
             }
             
-            // Kembalikan id antrean ke front-end agar halaman web bisa memproses hitungan persen %
+            // Mengembalikan ID task agar front-end bisa mulai menghitung progress %
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
