@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar aman diakses dari browser HP
+    // Pengaturan CORS terlengkap agar aman diakses dari browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,12 +29,14 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
+        // Endpoint Tunggal Resmi Magnific AI
+        const TASKS_URL = 'https://api.magnific.ai/v1/tasks';
+
         // ---------------------------------------------------------------------
         // JALUR 1: Memantau Progress Status Video (Polling)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            // Cek status antrean video menggunakan endpoint tasks tracking
-            const statusUrl = `https://api.magnific.ai/v1/tasks/${taskId}`;
+            const statusUrl = `${TASKS_URL}/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -66,23 +68,19 @@ module.exports = async (req, res) => {
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Mendaftarkan Pembuatan Video Baru (Sesuai Endpoint Resmi)
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru (Flat/Root Structure)
         // ---------------------------------------------------------------------
-        // Endpoint khusus untuk Video Control / Image-to-Video Magnific
-        const VIDEO_CONTROL_URL = 'https://api.magnific.ai/v1/video/control';
-
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
         const rawModel = body.model || "kling_v2_6";
         const finalGuidance = body.guidance_scale || 0.5;
-        const finalOrientation = body.character_orientation || "video";
 
         if (!finalImageUrl || String(finalImageUrl).trim() === "") {
             return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar referensi terlebih dahulu." });
         }
 
-        // Normalisasi format string nama model untuk Magnific
+        // Konversi penamaan model sesuai format resmi Magnific (garis bawah)
         let cleanModel = "kling_v2_6"; 
         const modelText = String(rawModel).toLowerCase();
 
@@ -98,26 +96,26 @@ module.exports = async (req, res) => {
             cleanModel = String(rawModel).trim().replace(/-/g, '_');
         }
 
-        // Susun payload langsung murni ke root objek sesuai spesifikasi endpoint /video/control
+        // ⚠️ STRUKTUR BARU: Semua parameter ditaruh di root utama, TIDAK pakai objek 'parameters' lagi
         const mainPayload = {
+            task_type: "video_generation",
             model: cleanModel,
             image_url: String(finalImageUrl),
             guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Jika ada video referensi tambahan
+        // Sertakan video referensi jika ada
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
             mainPayload.video_url = String(finalVideoUrl);
-            mainPayload.character_orientation = String(finalOrientation);
         }
 
-        // Jika ada prompt teks
+        // Sertakan prompt teks jika diisi
         if (finalPrompt && String(finalPrompt).trim() !== "") {
             mainPayload.prompt = String(finalPrompt);
         }
 
-        // Kirim request langsung ke endpoint video control
-        const response = await fetch(VIDEO_CONTROL_URL, {
+        // Kirim data ke Magnific
+        const response = await fetch(TASKS_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -135,13 +133,14 @@ module.exports = async (req, res) => {
                 return res.status(response.status).json({ error: data.detail || `Magnific menolak: ${responseText}` });
             }
             
-            // Mengembalikan ID task agar front-end bisa mulai menghitung progress %
+            // Kembalikan ID task ke front-end
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Gagal memproses struktur data Magnific (${response.status}).` });
+            // Jika masuk ke sini, kita muntahkan isi teks aslinya biar kelihatan eror apa dari Magnific
+            return res.status(response.status).json({ error: `Eror Respons Server (${response.status}): ${responseText.substring(0, 120)}` });
         }
 
     } catch (error) {
