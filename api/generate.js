@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS Terlengkap agar lancar diakses dari browser HP
+    // Pengaturan CORS Terlengkap untuk Browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,18 +29,16 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // 🌟 ENDPOINT RESMI WAVESPEED (Menggunakan rute /v1/tasks)
-        const WAVESPEED_TASKS_URL = 'https://api.wavespeed.ai/v1/tasks';
-
         // ---------------------------------------------------------------------
-        // JALUR 1: Memantau Progress Status Video (Polling)
+        // JALUR 1: Memantau Progress Status Video (Polling Fal.ai)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            const statusUrl = `${WAVESPEED_TASKS_URL}/${taskId}`;
+            // Rute cek status antrean resmi dari Fal.ai
+            const statusUrl = `https://queue.fal.run/fal-ai/kling-video/requests/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${apiKey}`,
+                    'Authorization': `Key ${apiKey}`,
                     'Accept': 'application/json'
                 }
             });
@@ -48,27 +46,22 @@ module.exports = async (req, res) => {
             const textData = await response.text();
             try {
                 const jsonData = JSON.parse(textData);
-                if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.message || 'Wavespeed gagal memperbarui status.' });
-                }
                 
-                let currentStatus = jsonData.status; // 'queued', 'processing', 'completed', 'failed'
-                let progressPercentage = jsonData.progress || 0;
+                let currentStatus = 'active';
+                let progressPercentage = 50;
+                let videoHasil = null;
 
-                if (currentStatus === 'completed' || currentStatus === 'succeeded') {
+                // Membaca status antrean Fal.ai
+                if (jsonData.status === 'COMPLETED' || jsonData.video) {
                     currentStatus = 'completed';
                     progressPercentage = 100;
-                } else if (currentStatus === 'failed') {
+                    videoHasil = jsonData.video?.url || (jsonData.outputs && jsonData.outputs[0]?.url) || null;
+                } else if (jsonData.status === 'FAILED') {
                     currentStatus = 'failed';
                 } else {
-                    currentStatus = 'active'; // Menyesuaikan dengan UI front-end lu
-                    if (!progressPercentage) progressPercentage = 45; 
+                    currentStatus = 'active';
+                    progressPercentage = jsonData.logs?.length ? Math.min(jsonData.logs.length * 5, 90) : 30;
                 }
-
-                // Mengambil link video hasil render dari array/objek output Wavespeed
-                const videoHasil = jsonData.output_video_url || 
-                                   (jsonData.output && jsonData.output.video_url) || 
-                                   (jsonData.output && jsonData.output[0]) || null;
 
                 return res.status(200).json({
                     status: currentStatus,
@@ -76,60 +69,50 @@ module.exports = async (req, res) => {
                     output_video_url: videoHasil
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: 'Gagal memproses data update status dari Wavespeed.' });
+                return res.status(response.status).json({ error: 'Gagal memproses update status antrean.' });
             }
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Mendaftarkan Pembuatan Video Baru
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru (Kling v2.6 / v2.5 via Fal)
         // ---------------------------------------------------------------------
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
         const rawModel = body.model || "kling_v2_6";
-        const finalGuidance = body.guidance_scale || 0.5;
 
         if (!finalImageUrl || String(finalImageUrl).trim() === "") {
-            return res.status(400).json({ error: "Gambar referensi utama kosong. Silakan unggah terlebih dahulu." });
+            return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar terlebih dahulu." });
         }
 
-        // Normalisasi format nama model untuk Wavespeed AI (menggunakan garis bawah)
-        let cleanModel = "kling_v2_6";
-        const modelText = String(rawModel).toLowerCase();
-
-        if (modelText.includes("kling") && modelText.includes("2.6")) {
-            cleanModel = "kling_v2_6";
-        } else if (modelText.includes("kling") && modelText.includes("2.5")) {
-            cleanModel = "kling_v2_5";
-        } else if (modelText.includes("luma")) {
-            cleanModel = "luma_ray_v2";
-        } else {
-            cleanModel = String(rawModel).trim().replace(/[\.-]/g, '_');
+        // Menentukan versi model Kling secara otomatis
+        let falEndpoint = "https://queue.fal.run/fal-ai/kling-video/v2.5/image-to-video";
+        if (String(rawModel).toLowerCase().includes("2.6")) {
+            falEndpoint = "https://queue.fal.run/fal-ai/kling-video/v2.6/image-to-video"; // Jalur Kling 2.6
         }
 
-        // Menyusun Paket Data/Payload Flat untuk Wavespeed /v1/tasks
-        const wavespeedPayload = {
-            task_type: "video_generation",
-            model: cleanModel,
-            prompt: finalPrompt || "Professional product commercial movement, clean aesthetic, 8k resolution, smooth motion",
+        // Menyusun payload standar industri milik Fal.ai
+        const falPayload = {
+            prompt: finalPrompt || "Professional product commercial movement, clean aesthetic, smooth camera movement, highly detailed",
             image_url: String(finalImageUrl),
-            guidance_scale: parseFloat(finalGuidance) || 0.5
+            duration: "5", // Durasi standar video komersial
+            aspect_ratio: "16:9"
         };
 
-        // Jika user menyertakan video gerakan sebagai acuan (Motion Control)
+        // Jika user menggunakan video referensi gerakan (Motion Control)
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
-            wavespeedPayload.video_url = String(finalVideoUrl);
+            falPayload.motion_video_url = String(finalVideoUrl);
         }
 
-        // Tembak langsung ke URL utama Wavespeed
-        const response = await fetch(WAVESPEED_TASKS_URL, {
+        // Kirim perintah ke Fal.ai Queue System
+        const response = await fetch(falEndpoint, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
+                'Authorization': `Key ${apiKey}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify(wavespeedPayload)
+            body: JSON.stringify(falPayload)
         });
 
         const responseText = await response.text();
@@ -137,19 +120,19 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                return res.status(response.status).json({ error: data.message || `Wavespeed menolak: ${responseText}` });
+                return res.status(response.status).json({ error: data.detail || `Fal.ai menolak: ${responseText}` });
             }
             
-            // Berhasil mengamankan ID antrean, oper balik ke front-end website lu
+            // Mengirim request_id antrean ke front-end website lu
             return res.status(200).json({
-                task_id: data.id || data.task_id
+                task_id: data.request_id || data.id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Eror Struktur Server Wavespeed (${response.status}): ${responseText.substring(0, 100)}` });
+            return res.status(response.status).json({ error: `Eror Jalur Gateway (${response.status}): ${responseText.substring(0, 100)}` });
         }
 
     } catch (error) {
-        return res.status(500).json({ error: 'Internal Backend Error: ' + error.message });
+        return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
     }
 };
