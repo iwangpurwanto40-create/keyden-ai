@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar bisa diakses lancar dari browser HP
+    // Pengaturan CORS Terlengkap agar lancar diakses dari browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,14 +29,15 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // 🌟 ENDPOINT ASLI WAVESPEED UNTUK MODEL KLING
-        const WAVESPEED_BASE = 'https://api.wavespeed.ai/v1';
+        // 🌟 ENDPOINT CORE UTAMA WAVESPEED
+        const BASE_URL = 'https://api.wavespeed.ai/v1/video';
 
         // ---------------------------------------------------------------------
-        // JALUR 1: Cek Status Antrean Video (Polling)
+        // JALUR 1: Memantau Progress Status Video (Polling)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            const response = await fetch(`${WAVESPEED_BASE}/tasks/${taskId}`, {
+            // Menggunakan rute universal cek status langsung ke id task
+            const response = await fetch(`${BASE_URL}/${taskId}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
@@ -61,13 +62,12 @@ module.exports = async (req, res) => {
                     currentStatus = 'failed';
                 } else {
                     currentStatus = 'active';
-                    if (!progressPercentage) progressPercentage = 40; 
+                    if (!progressPercentage) progressPercentage = 45; 
                 }
 
-                // Ambil link video hasil render dari objek output Wavespeed
-                const videoHasil = jsonData.output_url || 
+                const videoHasil = jsonData.output_video_url || 
                                    jsonData.video_url || 
-                                   (jsonData.output && jsonData.output.video_url) || null;
+                                   (jsonData.output && jsonData.output[0]) || null;
 
                 return res.status(200).json({
                     status: currentStatus,
@@ -75,42 +75,42 @@ module.exports = async (req, res) => {
                     output_video_url: videoHasil
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: 'Gagal membaca format status Wavespeed.' });
+                return res.status(response.status).json({ error: 'Gagal memproses format status Wavespeed.' });
             }
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Daftarkan Video Baru (Kling Image-to-Video / Motion)
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru
         // ---------------------------------------------------------------------
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
-        const rawModel = body.model || "kling";
+        const rawModel = body.model || "kling-v2.6";
 
         if (!finalImageUrl || String(finalImageUrl).trim() === "") {
             return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar terlebih dahulu." });
         }
 
-        // Menyesuaikan format penamaan model Kling di Wavespeed
-        let wavespeedModel = "kling-v2.5";
-        if (String(rawModel).toLowerCase().includes("2.6")) {
-            wavespeedModel = "kling-v2.6";
+        // Normalisasi format model Wavespeed yang valid menggunakan tanda minus
+        let cleanModel = "kling-v2.6";
+        if (String(rawModel).toLowerCase().includes("2.5")) {
+            cleanModel = "kling-v2.5";
         }
 
-        // Menyusun data payload root-level untuk dikirim ke Wavespeed
+        // Susunan data flat payload root-level sesuai spesifikasi Wavespeed Core
         const wavespeedPayload = {
-            model: wavespeedModel,
-            prompt: finalPrompt || "Smooth camera movement, high quality, professional production",
+            model: cleanModel,
+            prompt: finalPrompt || "Smooth professional camera movement, clean aesthetic, highly detailed",
             image_url: String(finalImageUrl)
         };
 
-        // Skema deteksi jika user mengunggah video referensi untuk gerakan (Motion Control)
+        // Jika ada video target gerakan (Motion Control)
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
             wavespeedPayload.motion_video_url = String(finalVideoUrl);
         }
 
-        // Tembak ke endpoint pembuatan task baru milik Wavespeed
-        const response = await fetch(`${WAVESPEED_BASE}/videos`, {
+        // Tembak langsung ke core endpoint pembuatan video
+        const response = await fetch(BASE_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -125,16 +125,15 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                return res.status(response.status).json({ error: data.message || `Wavespeed menolak: ${responseText}` });
+                return res.status(response.status).json({ error: data.message || `Wavespeed menolak request: ${responseText}` });
             }
             
-            // Kirim ID antrean balik ke halaman web front-end lu
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Eror Balasan Wavespeed (${response.status}): ${responseText.substring(0, 120)}` });
+            return res.status(response.status).json({ error: `Eror Struktur Endpoint (${response.status}): ${responseText.substring(0, 100)}` });
         }
 
     } catch (error) {
