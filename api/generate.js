@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS agar aman diakses dari browser HP tanpa hambatan
+    // Pengaturan CORS Terlengkap agar lancar diakses dari browser HP
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,14 +29,14 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // 🌟 ENDPOINT RESMI WAVESPEED.AI
-        const WAVESPEED_BASE_URL = 'https://api.wavespeed.ai/v1/video/generations';
+        // 🌟 ENDPOINT RESMI WAVESPEED (Menggunakan rute /v1/tasks)
+        const WAVESPEED_TASKS_URL = 'https://api.wavespeed.ai/v1/tasks';
 
         // ---------------------------------------------------------------------
-        // JALUR 1: Polling Status Perkembangan Video
+        // JALUR 1: Memantau Progress Status Video (Polling)
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            const statusUrl = `${WAVESPEED_BASE_URL}/${taskId}`;
+            const statusUrl = `${WAVESPEED_TASKS_URL}/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -52,9 +52,8 @@ module.exports = async (req, res) => {
                     return res.status(response.status).json({ error: jsonData.message || 'Wavespeed gagal memperbarui status.' });
                 }
                 
-                // Pemetaan status Wavespeed (biasanya: queued, processing, completed, failed)
-                let currentStatus = jsonData.status;
-                let progressPercentage = 0;
+                let currentStatus = jsonData.status; // 'queued', 'processing', 'completed', 'failed'
+                let progressPercentage = jsonData.progress || 0;
 
                 if (currentStatus === 'completed' || currentStatus === 'succeeded') {
                     currentStatus = 'completed';
@@ -63,11 +62,13 @@ module.exports = async (req, res) => {
                     currentStatus = 'failed';
                 } else {
                     currentStatus = 'active'; // Menyesuaikan dengan UI front-end lu
-                    progressPercentage = jsonData.progress || 45; // Default progress visual
+                    if (!progressPercentage) progressPercentage = 45; 
                 }
 
-                // Mengambil link video hasil render
-                const videoHasil = jsonData.output_video_url || (jsonData.output && jsonData.output[0]) || null;
+                // Mengambil link video hasil render dari array/objek output Wavespeed
+                const videoHasil = jsonData.output_video_url || 
+                                   (jsonData.output && jsonData.output.video_url) || 
+                                   (jsonData.output && jsonData.output[0]) || null;
 
                 return res.status(200).json({
                     status: currentStatus,
@@ -75,55 +76,53 @@ module.exports = async (req, res) => {
                     output_video_url: videoHasil
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: 'Gagal memproses data update dari Wavespeed.' });
+                return res.status(response.status).json({ error: 'Gagal memproses data update status dari Wavespeed.' });
             }
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Membuat Task Video Baru (Image-to-Video / Motion Control)
+        // JALUR 2: Mendaftarkan Pembuatan Video Baru
         // ---------------------------------------------------------------------
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
-        const rawModel = body.model || "kling-v2.6";
+        const rawModel = body.model || "kling_v2_6";
         const finalGuidance = body.guidance_scale || 0.5;
 
         if (!finalImageUrl || String(finalImageUrl).trim() === "") {
             return res.status(400).json({ error: "Gambar referensi utama kosong. Silakan unggah terlebih dahulu." });
         }
 
-        // Normalisasi nama model agar sesuai dengan standar API Wavespeed
-        let wavespeedModel = "kling-v2.6";
+        // Normalisasi format nama model untuk Wavespeed AI (menggunakan garis bawah)
+        let cleanModel = "kling_v2_6";
         const modelText = String(rawModel).toLowerCase();
 
         if (modelText.includes("kling") && modelText.includes("2.6")) {
-            wavespeedModel = "kling-v2.6";
+            cleanModel = "kling_v2_6";
         } else if (modelText.includes("kling") && modelText.includes("2.5")) {
-            wavespeedModel = "kling-v2.5";
+            cleanModel = "kling_v2_5";
         } else if (modelText.includes("luma")) {
-            wavespeedModel = "luma-ray-v2";
+            cleanModel = "luma_ray_v2";
         } else {
-            wavespeedModel = String(rawModel).trim().replace(/_/g, '.');
+            cleanModel = String(rawModel).trim().replace(/[\.-]/g, '_');
         }
 
-        // Susun payload sesuai dokumentasi payload root level milik Wavespeed.ai
+        // Menyusun Paket Data/Payload Flat untuk Wavespeed /v1/tasks
         const wavespeedPayload = {
-            model: wavespeedModel,
-            prompt: finalPrompt || "Smooth professional camera movement, high quality",
+            task_type: "video_generation",
+            model: cleanModel,
+            prompt: finalPrompt || "Professional product commercial movement, clean aesthetic, 8k resolution, smooth motion",
             image_url: String(finalImageUrl),
-            cfg_scale: parseFloat(finalGuidance) * 20 || 5.0 // Skala CFG Wavespeed biasanya berbasis 1-100
+            guidance_scale: parseFloat(finalGuidance) || 0.5
         };
 
-        // Jika ada video referensi untuk motion control / character orientation
+        // Jika user menyertakan video gerakan sebagai acuan (Motion Control)
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
-            wavespeedPayload.motion_video_url = String(finalVideoUrl);
-            wavespeedPayload.mode = "motion_control";
-        } else {
-            wavespeedPayload.mode = "image_to_video";
+            wavespeedPayload.video_url = String(finalVideoUrl);
         }
 
-        // Kirim perintah ke Wavespeed API
-        const response = await fetch(WAVESPEED_BASE_URL, {
+        // Tembak langsung ke URL utama Wavespeed
+        const response = await fetch(WAVESPEED_TASKS_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -141,13 +140,13 @@ module.exports = async (req, res) => {
                 return res.status(response.status).json({ error: data.message || `Wavespeed menolak: ${responseText}` });
             }
             
-            // Kirim ID antrean Wavespeed ke front-end halaman web lu
+            // Berhasil mengamankan ID antrean, oper balik ke front-end website lu
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Respons non-JSON dari Wavespeed (${response.status}): ${responseText.substring(0, 100)}` });
+            return res.status(response.status).json({ error: `Eror Struktur Server Wavespeed (${response.status}): ${responseText.substring(0, 100)}` });
         }
 
     } catch (error) {
