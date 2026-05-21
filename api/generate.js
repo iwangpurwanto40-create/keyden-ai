@@ -1,7 +1,7 @@
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    // Pengaturan CORS Terlengkap agar lancar diakses dari browser HP
+    // Pengaturan CORS agar aman diakses dari browser HP tanpa hambatan
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -29,15 +29,14 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'API Key wajib diisi!' });
         }
 
-        // 🌟 ENDPOINT BARU KHUSUS VIDEO (Bukan /v1/tasks lagi)
-        const BASE_VIDEO_URL = 'https://api.magnific.ai/v1/video';
+        // 🌟 ENDPOINT RESMI WAVESPEED.AI
+        const WAVESPEED_BASE_URL = 'https://api.wavespeed.ai/v1/video/generations';
 
         // ---------------------------------------------------------------------
-        // JALUR 1: Memantau Progress Status Video (Polling)
+        // JALUR 1: Polling Status Perkembangan Video
         // ---------------------------------------------------------------------
         if (checkStatus && taskId) {
-            // Mengecek antrean video langsung ke endpoint video/[id]
-            const statusUrl = `${BASE_VIDEO_URL}/${taskId}`;
+            const statusUrl = `${WAVESPEED_BASE_URL}/${taskId}`;
             const response = await fetch(statusUrl, {
                 method: 'GET',
                 headers: {
@@ -50,79 +49,88 @@ module.exports = async (req, res) => {
             try {
                 const jsonData = JSON.parse(textData);
                 if (!response.ok) {
-                    return res.status(response.status).json({ error: jsonData.detail || 'Gagal memantau status antrean video.' });
+                    return res.status(response.status).json({ error: jsonData.message || 'Wavespeed gagal memperbarui status.' });
                 }
                 
-                let videoHasil = null;
-                if (jsonData.result) {
-                    videoHasil = jsonData.result.output_video_url || jsonData.result.output || jsonData.result;
+                // Pemetaan status Wavespeed (biasanya: queued, processing, completed, failed)
+                let currentStatus = jsonData.status;
+                let progressPercentage = 0;
+
+                if (currentStatus === 'completed' || currentStatus === 'succeeded') {
+                    currentStatus = 'completed';
+                    progressPercentage = 100;
+                } else if (currentStatus === 'failed') {
+                    currentStatus = 'failed';
+                } else {
+                    currentStatus = 'active'; // Menyesuaikan dengan UI front-end lu
+                    progressPercentage = jsonData.progress || 45; // Default progress visual
                 }
 
+                // Mengambil link video hasil render
+                const videoHasil = jsonData.output_video_url || (jsonData.output && jsonData.output[0]) || null;
+
                 return res.status(200).json({
-                    status: jsonData.status, 
-                    progress: jsonData.progress || 0,
+                    status: currentStatus,
+                    progress: progressPercentage,
                     output_video_url: videoHasil
                 });
             } catch (e) {
-                return res.status(response.status).json({ error: 'Gagal membaca status perkembangan video.' });
+                return res.status(response.status).json({ error: 'Gagal memproses data update dari Wavespeed.' });
             }
         }
 
         // ---------------------------------------------------------------------
-        // JALUR 2: Mendaftarkan Pembuatan Video Baru
+        // JALUR 2: Membuat Task Video Baru (Image-to-Video / Motion Control)
         // ---------------------------------------------------------------------
         const finalImageUrl = body.image_url || body.image || body.imageUrl;
         const finalVideoUrl = body.video_url || body.video || body.videoUrl;
         const finalPrompt = body.prompt || "";
-        const rawModel = body.model || "kling_v2_6";
+        const rawModel = body.model || "kling-v2.6";
         const finalGuidance = body.guidance_scale || 0.5;
 
         if (!finalImageUrl || String(finalImageUrl).trim() === "") {
-            return res.status(400).json({ error: "Gambar utama kosong. Silakan unggah gambar referensi terlebih dahulu." });
+            return res.status(400).json({ error: "Gambar referensi utama kosong. Silakan unggah terlebih dahulu." });
         }
 
-        // Penerjemah nama kode model otomatis (wajib menggunakan garis bawah '_')
-        let cleanModel = "kling_v2_6"; 
+        // Normalisasi nama model agar sesuai dengan standar API Wavespeed
+        let wavespeedModel = "kling-v2.6";
         const modelText = String(rawModel).toLowerCase();
 
         if (modelText.includes("kling") && modelText.includes("2.6")) {
-            cleanModel = "kling_v2_6";
+            wavespeedModel = "kling-v2.6";
         } else if (modelText.includes("kling") && modelText.includes("2.5")) {
-            cleanModel = "kling_v2_5";
+            wavespeedModel = "kling-v2.5";
         } else if (modelText.includes("luma")) {
-            cleanModel = "luma_ray_v2";
-        } else if (modelText.includes("runway") || modelText.includes("gen3")) {
-            cleanModel = "runway_gen3";
+            wavespeedModel = "luma-ray-v2";
         } else {
-            cleanModel = String(rawModel).trim().replace(/-/g, '_');
+            wavespeedModel = String(rawModel).trim().replace(/_/g, '.');
         }
 
-        // Struktur data flat (tingkat utama) yang diminta oleh endpoint /v1/video
-        const mainPayload = {
-            model: cleanModel,
+        // Susun payload sesuai dokumentasi payload root level milik Wavespeed.ai
+        const wavespeedPayload = {
+            model: wavespeedModel,
+            prompt: finalPrompt || "Smooth professional camera movement, high quality",
             image_url: String(finalImageUrl),
-            guidance_scale: parseFloat(finalGuidance) || 0.5
+            cfg_scale: parseFloat(finalGuidance) * 20 || 5.0 // Skala CFG Wavespeed biasanya berbasis 1-100
         };
 
-        // Tambahkan opsional video jika ada gerakan referensi
+        // Jika ada video referensi untuk motion control / character orientation
         if (finalVideoUrl && String(finalVideoUrl).trim() !== "") {
-            mainPayload.video_url = String(finalVideoUrl);
+            wavespeedPayload.motion_video_url = String(finalVideoUrl);
+            wavespeedPayload.mode = "motion_control";
+        } else {
+            wavespeedPayload.mode = "image_to_video";
         }
 
-        // Tambahkan teks prompt instruksi jika diisi
-        if (finalPrompt && String(finalPrompt).trim() !== "") {
-            mainPayload.prompt = String(finalPrompt);
-        }
-
-        // Tembak langsung ke endpoint pembuatan video baru Magnific
-        const response = await fetch(BASE_VIDEO_URL, {
+        // Kirim perintah ke Wavespeed API
+        const response = await fetch(WAVESPEED_BASE_URL, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify(mainPayload)
+            body: JSON.stringify(wavespeedPayload)
         });
 
         const responseText = await response.text();
@@ -130,16 +138,16 @@ module.exports = async (req, res) => {
         try {
             const data = JSON.parse(responseText);
             if (!response.ok) {
-                return res.status(response.status).json({ error: data.detail || `Sistem Magnific menolak: ${responseText}` });
+                return res.status(response.status).json({ error: data.message || `Wavespeed menolak: ${responseText}` });
             }
             
-            // Berhasil mendapatkan ID antrean, kirim ke front-end halaman web lu
+            // Kirim ID antrean Wavespeed ke front-end halaman web lu
             return res.status(200).json({
                 task_id: data.id || data.task_id
             });
 
         } catch (jsonEror) {
-            return res.status(response.status).json({ error: `Eror Struktural Server (${response.status}): ${responseText.substring(0, 120)}` });
+            return res.status(response.status).json({ error: `Respons non-JSON dari Wavespeed (${response.status}): ${responseText.substring(0, 100)}` });
         }
 
     } catch (error) {
